@@ -10,7 +10,7 @@ DEFAULT_SPEC_FILE = 'resources/hp_spec.list'
 
 
 class ModelsList:
-    modelsData = []
+    modelsData = {}
     ontoReader = None
 
     semSims = {}
@@ -26,7 +26,7 @@ class ModelsList:
 
         self.loadPrerequisites(ontoPathsFile, hpICFile, hpSpecFile)
 
-        self.modelsData = []
+        self.modelsData = {}
         self.readModelsFile(modelsFile)
 
     def loadPrerequisites(self, ontoPathsFile, hpICFile, hpSpecFile):
@@ -64,16 +64,34 @@ class ModelsList:
             if not consolidatedHPOId:
                 print('Term {} from the models file does not exist.'.format(hpoId))
                 continue
+            val = False
             if flag.lower() == 'y':
-                self.modelsData.append(consolidatedHPOId)
+                val = True
+            if consolidatedHPOId in self.modelsData:
+                val = val or self.modelsData[consolidatedHPOId]
+            self.modelsData[consolidatedHPOId] = val
 
     def getBestModelForTerm(self, term: str, semsim: str, useIC=True, threshold=0.0):
-        if term in self.modelsData:
-            return term, -1.0
+        consolidatedTerm = self.ontoReader.consolidate(term)
+        if not consolidatedTerm:
+            print('Term {} does no longer exist in the ontology'.format(term))
+            return None, -1.0
+
+        if consolidatedTerm in self.modelsData:
+            if self.modelsData[consolidatedTerm]:
+                return consolidatedTerm, -1.0
+            else:
+                print(
+                    'Term {} (consolidated as {}) exists in the models list, but without a model. Returning the best match with a model.'.format(
+                        term, consolidatedTerm))
+
         max = None
         maxVal = 0.0
         for entry in self.modelsData:
-            semVal = self.semSims[semsim].compute(term, entry, useIC)
+            if not self.modelsData[entry]:
+                continue
+
+            semVal = self.semSims[semsim].compute(consolidatedTerm, entry, useIC)
             if semVal >= threshold:
                 if semVal > maxVal:
                     maxVal = semVal
@@ -83,7 +101,7 @@ class ModelsList:
             print('Best model for term {} is: {} ({})'.format(term, max, maxVal))
             return max, maxVal
 
-        return None, None
+        return None, -1.0
 
     def getBestModelsForList(self, termList: [str], semsim: str, useIC=True, threshold=0.0):
         result = {}
